@@ -1,0 +1,4 @@
+segv-debug-c/db-thread
+segv-debug-c/thr-id
+*.o
+*.a

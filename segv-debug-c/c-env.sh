@@ -1,0 +1,4 @@
+export ORA_SCHEMA=TESTUSER
+export ORA_DBNAME=ORA19C
+export ORA_PASSWD=TestPass25
+#xport ORACLE_SID=orcl
