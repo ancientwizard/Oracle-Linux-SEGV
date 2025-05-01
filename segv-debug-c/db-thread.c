@@ -26,7 +26,7 @@ void* db_thread_function(void* arg) {
     const char* dbname = getenv("ORA_DBNAME");
 
     // Initialize OCI environment
-    if (OCIEnvCreate(&env, OCI_DEFAULT, NULL, NULL, NULL, NULL, 0, NULL) != OCI_SUCCESS) {
+    if (OCIEnvCreate(&env, OCI_THREADED, NULL, NULL, NULL, NULL, 0, NULL) != OCI_SUCCESS) {
         snprintf(status->error_message, sizeof(status->error_message), "Failed to initialize OCI environment");
         status->connection_status = -1;
         pthread_exit(NULL);
@@ -104,29 +104,35 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Create threads
-    for (int i = 0; i < num_threads; i++) {
-        memset(&statuses[i], 0, sizeof(ThreadStatus));
-        if (pthread_create(&threads[i], NULL, db_thread_function, &statuses[i]) != 0) {
-            perror("Failed to create thread");
-            num_threads = i; // Adjust the number of threads to join
-            break;
-        }
-    }
+    for ( int l = 1 ; l < 33 ; l ++ )
+    {
 
-    // Wait for threads to complete
-    for (int i = 0; i < num_threads; i++) {
-        pthread_join(threads[i], NULL);
-        printf("Thread %d:\n", i + 1);
-        if (statuses[i].connection_status == 0 && statuses[i].ping_status == 0) {
-            printf("  Database connection and ping successful.\n");
-        } else {
-            printf("  Error: %s\n", statuses[i].error_message);
+        // Create threads
+        for (int i = 0; i < num_threads; i++) {
+            memset(&statuses[i], 0, sizeof(ThreadStatus));
+            if (pthread_create(&threads[i], NULL, db_thread_function, &statuses[i]) != 0) {
+                perror("Failed to create thread");
+                num_threads = i; // Adjust the number of threads to join
+                break;
+            }
+        }
+
+        // Wait for threads to complete
+        for (int i = 0; i < num_threads; i++) {
+            pthread_join(threads[i], NULL);
+            printf(" INFO: LOOP %d Thread %d", l, i + 1);
+            if (statuses[i].connection_status == 0 && statuses[i].ping_status == 0) {
+                printf(" Database connection and ping successful.\n");
+            } else {
+                printf(" Error: %s\n", statuses[i].error_message);
+            }
         }
     }
 
     free(threads);
     free(statuses);
+
+    printf("\n EXIT SUCCESS\n\n");
 
     return EXIT_SUCCESS;
 }
