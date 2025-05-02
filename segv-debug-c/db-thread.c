@@ -25,8 +25,17 @@ void* db_thread_function(void* arg) {
     const char* passwd = getenv("ORA_PASSWD");
     const char* dbname = getenv("ORA_DBNAME");
 
-    // Initialize OCI environment
-    if (OCIEnvCreate(&env, OCI_THREADED, NULL, NULL, NULL, NULL, 0, NULL) != OCI_SUCCESS) {
+//  if (OCIEnvCreate(&env, OCI_THREADED, NULL, NULL, NULL, NULL, 0, NULL) != OCI_SUCCESS) {
+
+    // Initialize OCI environment - mimic what is seen in DBD::Oracle ->> OCI_DEFAULT
+    if (OCIEnvNlsCreate(&env, OCI_DEFAULT, 0, NULL, NULL, NULL, 0, NULL, 0, 0) != OCI_SUCCESS) {
+        snprintf(status->error_message, sizeof(status->error_message), "Failed to initialize OCI environment");
+        status->connection_status = -1;
+        pthread_exit(NULL);
+    }
+
+    // DBD::Oracle uses this function. Works here OK ->> OCI_THREADED
+    if (OCIEnvNlsCreate(&env, OCI_THREADED, 0, NULL, NULL, NULL, 0, NULL, 0, 0) != OCI_SUCCESS) {
         snprintf(status->error_message, sizeof(status->error_message), "Failed to initialize OCI environment");
         status->connection_status = -1;
         pthread_exit(NULL);
