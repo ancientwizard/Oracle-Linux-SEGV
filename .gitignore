@@ -1,4 +1,4 @@
-segv-debug-c/db-thread
-segv-debug-c/thr-id
+segv-c/db-thread
+segv-c/thr-id
 *.o
 *.a

@@ -135,6 +135,7 @@ void* db_thread_function(void* arg)
     t_status->ping_status = 0;
 
 cleanup:
+
     // Disconnect and clean up using OCISessionEnd && OCIServerDetach
     if (seshp && (status = OCISessionEnd(svchp, errhp, seshp, OCI_DEFAULT)) != OCI_SUCCESS) {
         OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
