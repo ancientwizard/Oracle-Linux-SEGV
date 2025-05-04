@@ -120,7 +120,7 @@ void* db_thread_function(void* arg)
     //                   (OraText*)dbname, strlen(dbname));
     // if (status != OCI_SUCCESS) {
     //     OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
-    //     t_status->connection_status = -1;
+    //     t_status->connection_status = status;
     //     goto cleanup;
     // }
     // t_status->connection_status = 0;
@@ -129,7 +129,7 @@ void* db_thread_function(void* arg)
     status = OCIPing(svchp, errhp, OCI_DEFAULT);
     if (status != OCI_SUCCESS) {
         OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
-        t_status->ping_status = -1;
+        t_status->ping_status = status;
         goto cleanup;
     }
     t_status->ping_status = 0;
