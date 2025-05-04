@@ -13,12 +13,16 @@ typedef struct {
 } ThreadStatus;
 
 // Thread function
-void* db_thread_function(void* arg) {
-    ThreadStatus* status = (ThreadStatus*)arg;
-    OCIEnv* env = NULL;
-    OCIError* err = NULL;
-    OCISvcCtx* svc = NULL;
-    int retval;
+void* db_thread_function(void* arg)
+{
+    ThreadStatus* t_status = (ThreadStatus*)arg;
+    OCIEnv*     mng_env = NULL; // OCI environment handle (OCIEnvNlsCreate)
+    OCIEnv*     envhp   = NULL; // OCI environment handle (OCIEnvNlsCreate)
+    OCIError*   errhp   = NULL; // OCI error handle
+    OCIServer*  srvhp   = NULL; // OCI server handle
+    OCISvcCtx*  svchp   = NULL; // OCI service context handle
+    OCISession* seshp   = NULL; // OCI session handle
+    sword status;
 
     // Get credentials from environment variables
     const char* schema = getenv("ORA_SCHEMA");
@@ -28,47 +32,132 @@ void* db_thread_function(void* arg) {
 //  if (OCIEnvCreate(&env, OCI_THREADED, NULL, NULL, NULL, NULL, 0, NULL) != OCI_SUCCESS) {
 
     // Initialize OCI environment - mimic what is seen in DBD::Oracle ->> OCI_DEFAULT
-    if (OCIEnvNlsCreate(&env, OCI_DEFAULT, 0, NULL, NULL, NULL, 0, NULL, 0, 0) != OCI_SUCCESS) {
-        snprintf(status->error_message, sizeof(status->error_message), "Failed to initialize OCI environment");
-        status->connection_status = -1;
+    if (( status = OCIEnvNlsCreate(&mng_env, OCI_DEFAULT, 0, NULL, NULL, NULL, 0, NULL, 0, 0)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to initialize OCI (mng_env) environment");
+        t_status->connection_status = status;
         pthread_exit(NULL);
     }
 
     // DBD::Oracle uses this function. Works here OK ->> OCI_THREADED
-    if (OCIEnvNlsCreate(&env, OCI_THREADED, 0, NULL, NULL, NULL, 0, NULL, 0, 0) != OCI_SUCCESS) {
-        snprintf(status->error_message, sizeof(status->error_message), "Failed to initialize OCI environment");
-        status->connection_status = -1;
+    if (( status = OCIEnvNlsCreate(&envhp, OCI_THREADED, 0, NULL, NULL, NULL, 0, NULL, 0, 0)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to initialize OCI environment");
+        t_status->connection_status = status;
         pthread_exit(NULL);
     }
 
     // Allocate error handle
-    OCIHandleAlloc(env, (void**)&err, OCI_HTYPE_ERROR, 0, NULL);
+    if (( status = OCIHandleAlloc(envhp, (void**)&errhp, OCI_HTYPE_ERROR, 0, NULL)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to allocate OCI error handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
 
-    // Connect to the database
-    retval = OCILogon(env, err, &svc, (OraText*)schema, strlen(schema),
-                      (OraText*)passwd, strlen(passwd),
-                      (OraText*)dbname, strlen(dbname));
-    if (retval != OCI_SUCCESS) {
-        OCIErrorGet(err, 1, NULL, &retval, (OraText*)status->error_message, sizeof(status->error_message), OCI_HTYPE_ERROR);
-        status->connection_status = -1;
+    // Allocate server handle
+    if (( status = OCIHandleAlloc(envhp, (void**)&srvhp, OCI_HTYPE_SERVER, 0, NULL)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to allocate OCI server handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // CTX: Allocate service context handle
+    if (( status = OCIHandleAlloc(envhp, (void**)&svchp, OCI_HTYPE_SVCCTX, 0, NULL)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to allocate OCI service handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // Allocate session handle (dbdcnx.c, #339)
+    if (( status = OCIHandleAlloc(envhp, (void**)&seshp, OCI_HTYPE_SESSION, 0, NULL)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to allocate OCI session handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // Attach to the server (dbdcnx.c, :#346)
+    if (( status = OCIServerAttach(srvhp, errhp, (OraText*)dbname, strlen(dbname), OCI_DEFAULT)) != OCI_SUCCESS) {
+        OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+        t_status->connection_status = -1;
         goto cleanup;
     }
-    status->connection_status = 0;
+
+    // Set the server handle in the service context (dbdcnx.c, L#353)
+    if (( status = OCIAttrSet(svchp, OCI_HTYPE_SVCCTX, srvhp, 0, OCI_ATTR_SERVER, errhp)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to set server handle in service context");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // SET USERNAME (dbdcnx.c, L#368)
+    if (( status = OCIAttrSet(seshp, OCI_HTYPE_SESSION, (void*)schema, strlen(schema), OCI_ATTR_USERNAME, errhp)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to set username in session handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // SET PASSWORD (dbdcnx.c, L#379)
+    if (( status = OCIAttrSet(seshp, OCI_HTYPE_SESSION, (void*)passwd, strlen(passwd), OCI_ATTR_PASSWORD, errhp)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to set password in session handle");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // Connect to the database using OCISessionBegin (dbdcnx.c, L#405)
+    if (( status = OCISessionBegin(svchp, errhp, seshp, OCI_CRED_RDBMS, OCI_DEFAULT)) != OCI_SUCCESS) {
+        OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+        t_status->connection_status = status;
+        goto cleanup;
+    }
+
+    // Set the session handle in the service context (dbdcnx.c, L#410)
+    if (( status = OCIAttrSet(svchp, OCI_HTYPE_SVCCTX, seshp, 0, OCI_ATTR_SESSION, errhp)) != OCI_SUCCESS) {
+        snprintf(t_status->error_message, sizeof(t_status->error_message), "Failed to set session handle in service context");
+        t_status->connection_status = status;
+        pthread_exit(NULL);
+    }
+
+    // status = OCILogon(envhp, errhp, &svchp, (OraText*)schema, strlen(schema),
+    //                   (OraText*)passwd, strlen(passwd),
+    //                   (OraText*)dbname, strlen(dbname));
+    // if (status != OCI_SUCCESS) {
+    //     OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+    //     t_status->connection_status = -1;
+    //     goto cleanup;
+    // }
+    // t_status->connection_status = 0;
 
     // Perform ping
-    retval = OCIPing(svc, err, OCI_DEFAULT);
-    if (retval != OCI_SUCCESS) {
-        OCIErrorGet(err, 1, NULL, &retval, (OraText*)status->error_message, sizeof(status->error_message), OCI_HTYPE_ERROR);
-        status->ping_status = -1;
+    status = OCIPing(svchp, errhp, OCI_DEFAULT);
+    if (status != OCI_SUCCESS) {
+        OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+        t_status->ping_status = -1;
         goto cleanup;
     }
-    status->ping_status = 0;
+    t_status->ping_status = 0;
 
 cleanup:
-    // Disconnect and clean up
-    if (svc) OCILogoff(svc, err);
-    if (err) OCIHandleFree(err, OCI_HTYPE_ERROR);
-    if (env) OCIHandleFree(env, OCI_HTYPE_ENV);
+    // Disconnect and clean up using OCISessionEnd && OCIServerDetach
+    if (seshp && (status = OCISessionEnd(svchp, errhp, seshp, OCI_DEFAULT)) != OCI_SUCCESS) {
+        OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+        t_status->connection_status = status;
+    }
+
+    if (srvhp && (status = OCIServerDetach(srvhp, errhp, OCI_DEFAULT)) != OCI_SUCCESS) {
+        OCIErrorGet(errhp, 1, NULL, &status, (OraText*)t_status->error_message, sizeof(t_status->error_message), OCI_HTYPE_ERROR);
+        t_status->connection_status = status;
+    }
+
+    // This PAIRS with OCILogon
+    // if (svchp && (status = OCILogoff(svchp, errhp)) != OCI_SUCCESS )
+    //     fprintf(stderr, "OCILogOff(svc,errhp) returned %d\n", status);
+
+    if (seshp && (status = OCIHandleFree(seshp, OCI_HTYPE_SESSION)) != OCI_SUCCESS )
+        fprintf(stderr, "OCIHandleFree(seshp, OCI_HTYPE_SESSION) returned %d\n", status);
+    if (errhp && (status = OCIHandleFree(errhp, OCI_HTYPE_ERROR)) != OCI_SUCCESS )
+        fprintf(stderr, "OCIHandleFree(errhp, OCI_HTYPE_ERROR) returned %d\n", status);
+    if (envhp && (status = OCIHandleFree(envhp, OCI_HTYPE_ENV)) != OCI_SUCCESS )
+        fprintf(stderr, "OCIHandleFree(envhp, OCI_HTYPE_ENV) returned %d\n", status);
+    if (mng_env && (status = OCIHandleFree(mng_env, OCI_HTYPE_ENV)) != OCI_SUCCESS )
+        fprintf(stderr, "OCIHandleFree(mng_env, OCI_HTYPE_ENV) returned %d\n", status);
 
     pthread_exit(NULL);
 }
@@ -141,9 +230,15 @@ int main(int argc, char* argv[]) {
     free(threads);
     free(statuses);
 
+    printf(" INFO: Thread count: %d\n", num_threads);
     printf("\n EXIT SUCCESS\n\n");
+
+    // printf(" INFO: OCI_DEFAULT : %d\n", OCI_DEFAULT);
+    // printf(" INFO: OCI_THREADED: %d\n", OCI_THREADED);
+    // printf(" INFO: OCI_OBJECT  : %d\n", OCI_OBJECT);
 
     return EXIT_SUCCESS;
 }
 
+// vim: expandtab number tabstop=4 shiftwidth=4
 // END
