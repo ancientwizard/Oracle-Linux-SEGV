@@ -109,7 +109,33 @@ THREADS_SEGV:
   my $onemore;    ## to be the last but used only once
   my $size = 2;
 
-  for my $loop ( 1 .. 1 )
+  sub finish_onemore
+  {
+    if ( $onemore && $onemore->{THRD} )
+    {
+    # note 'SNEEK IN ANOTHER (BEGIN)';
+    # my ( $in, $ou ) = ( Thread::Queue->new, Thread::Queue->new );
+    # my $thr = threads->create( \&thread_worker, $in, $ou );
+    # $in->enqueue( DB::Msg::Ping->new );
+    # threads->yield;
+    # note 'SNEEK IN ANOTHER (END)';
+    # usleep 200000;
+
+      note 'EXIT THE-ONE-MORE thread';
+    # DBI->trace(6);
+      my ( $Qin, $thr ) = ( $onemore->{Q_IN}, $onemore->{THRD} );
+      $Qin->enqueue( DB::Msg::Exit->new );
+      sleep 1;
+      $thr->join;
+      note 'EXIT THE-ONE-MORE thread (joined)';
+    }
+
+    $onemore = undef;
+
+    return
+  }
+
+  for my $loop ( 1 .. 3 )
   {
     note "START LOOP $loop";
   # sleep 4;
@@ -157,30 +183,14 @@ THREADS_SEGV:
       note "  END LOOP $loop";
     # sleep 4;
     # note 'Manual Disable: ', $queue->disable;
+      finish_onemore;
     }
 
     ok( DB::Queue->new->isDisabled,  '  q->isDisabled (auto-cleanup DESTROY)' );
     note qx/ps -o rss,size,pid,cmd -p $$/;
   }
 
-  if ( $onemore && $onemore->{THRD} )
-  {
-  # note 'SNEEK IN ANOTHER (BEGIN)';
-  # my ( $in, $ou ) = ( Thread::Queue->new, Thread::Queue->new );
-  # my $thr = threads->create( \&thread_worker, $in, $ou );
-  # $in->enqueue( DB::Msg::Ping->new );
-  # threads->yield;
-  # note 'SNEEK IN ANOTHER (END)';
-  # usleep 200000;
-
-    note 'EXIT THE-ONE-MORE thread';
-  # DBI->trace(6);
-    my ( $Qin, $thr ) = ( $onemore->{Q_IN}, $onemore->{THRD} );
-    $Qin->enqueue( DB::Msg::Exit->new );
-    sleep 1;
-    $thr->join;
-    note 'EXIT THE-ONE-MORE thread (joined)';
-  }
+  finish_onemore;
 }
 
 note sprintf 'Completed in %5.3fs', Time::HiRes::time() - $TEST_START;
@@ -253,7 +263,7 @@ BEGIN {
   $STATUS   = {};
   $THREADS  = [];
 
-# DBI->trace(7);
+# DBI->trace(3);
 }
 
 sub CLONE {
