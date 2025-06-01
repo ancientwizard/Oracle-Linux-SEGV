@@ -2,9 +2,7 @@
 Debugging instability
 
 **Update**
-The instability was false (concerning instantclient). It was caused by a mistake on my part and Copilot helping.
-The DBD::Oracle 1.90 implementation does have and issue and causes the last OCISessionEnd to SEGV.
-The conditions are:
-- Three+ threads all connect to the same DB/account etc (this is what I did, perhaps other combos also)
-- Then after all threee are connected the last one to disconnect will SEGV.
+There were two SEGV Issues.
+- First was caused by a defect in the DBD::Oracle module (has been corrected by pull request(s) containing new tests and defect corrected)
+- Second was caused by a defect in Perl signal handling where non-Perl threads entered Perl to service an interrupt. I hear that one fix was offered int "blead", another has been incorporated into 5.40.2; each having a differnt approach but testing seems to be stable and the SEGV no longer rears its ugly head
 
