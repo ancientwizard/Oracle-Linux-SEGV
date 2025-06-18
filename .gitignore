@@ -1,4 +1,5 @@
 segv-c/db-thread
+segv-c/db-handle-size
 segv-c/thr-id
 *.o
 *.a

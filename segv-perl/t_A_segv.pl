@@ -107,7 +107,10 @@ THREADS_SEGV:
   section 'Threads + DB->ping stress testing';
 
   my $onemore;    ## to be the last but used only once
-  my $size = 2;
+  my $do_onemore = 0;
+
+  ## <= 2 OKAY; > 2 SEGV!!! unless one $do_onemore is enabled to control disconnect order
+  my $size = 3;
 
   sub finish_onemore
   {
@@ -154,7 +157,7 @@ THREADS_SEGV:
 
       is    $queue->ping, $size,  '  ALL->connected';
 
-      if ( ! $onemore )
+      if ( $do_onemore && ! $onemore )
       {
         $onemore = {};
 

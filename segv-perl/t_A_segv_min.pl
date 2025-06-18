@@ -102,7 +102,7 @@ my $TEST_START = Time::HiRes::time();
         if ( $dbh )
         {
             note "Thread ID: $thread_id (disconnecting from DB)";
-            $dbh->disconnect();
+            $dbh->disconnect;
         }
 
         return 1;
@@ -183,11 +183,11 @@ LAUNCH:
     }
 
     all_ready( $thread_count );
-    do_exit($thread_count);
+    do_exit( $thread_count );
 
     foreach my $thread (@threads) {
         my $result = $thread->join();
-        ok $result, 'Thread completed successfully';
+        ok $result, sprintf 'Thread completed successfully tid=%d', $thread->tid;
     }
 
     note sprintf 'Threads: %d', scalar(@threads);
